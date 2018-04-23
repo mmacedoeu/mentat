@@ -17,6 +17,7 @@ use std::collections::{
 use std::os::raw::{
     c_char,
     c_int,
+    c_longlong,
     c_void,
 };
 use std::slice;
@@ -24,8 +25,6 @@ use std::sync::{
     Arc,
 };
 use std::vec;
-
-use libc::time_t;
 
 pub use mentat::{
     Entid,
@@ -188,22 +187,14 @@ pub unsafe extern "C" fn store_query<'a>(store: *mut Store, query: *const c_char
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn query_builder_bind_int(query_builder: *mut QueryBuilder, var: *const c_char, value: c_int) {
-    let var = c_char_to_string(var);
-    let query_builder = &mut*query_builder;
-    let value = value as i32;
-    query_builder.bind_value(&var, value);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn query_builder_bind_long(query_builder: *mut QueryBuilder, var: *const c_char, value: i64) {
+pub unsafe extern "C" fn query_builder_bind_long(query_builder: *mut QueryBuilder, var: *const c_char, value: c_longlong) {
     let var = c_char_to_string(var);
     let query_builder = &mut*query_builder;
    query_builder.bind_long(&var, value);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn query_builder_bind_ref(query_builder: *mut QueryBuilder, var: *const c_char, value: i64) {
+pub unsafe extern "C" fn query_builder_bind_ref(query_builder: *mut QueryBuilder, var: *const c_char, value: c_longlong) {
     let var = c_char_to_string(var);
     let query_builder = &mut*query_builder;
     query_builder.bind_ref(&var, value);
@@ -245,10 +236,10 @@ pub unsafe extern "C" fn query_builder_bind_double(query_builder: *mut QueryBuil
 
 // instant
 #[no_mangle]
-pub unsafe extern "C" fn query_builder_bind_timestamp(query_builder: *mut QueryBuilder, var: *const c_char, value: time_t) {
+pub unsafe extern "C" fn query_builder_bind_timestamp(query_builder: *mut QueryBuilder, var: *const c_char, value: c_longlong) {
     let var = c_char_to_string(var);
     let query_builder = &mut*query_builder;
-    query_builder.bind_instant(&var, value as i64);
+    query_builder.bind_instant(&var, value);
 }
 
 // string
@@ -299,7 +290,7 @@ pub unsafe extern "C" fn query_builder_execute(query_builder: *mut QueryBuilder)
 
 // as_long
 #[no_mangle]
-pub unsafe extern "C" fn typed_value_as_long(typed_value: *mut TypedValue) ->  i64 {
+pub unsafe extern "C" fn typed_value_as_long(typed_value: *mut TypedValue) ->  c_longlong {
     let typed_value = Box::from_raw(typed_value);
     typed_value.into_long().expect("Typed value cannot be coerced into a Long")
 }
@@ -334,10 +325,10 @@ pub unsafe extern "C" fn typed_value_as_double(typed_value: *mut TypedValue) -> 
 
 //as_timestamp
 #[no_mangle]
-pub unsafe extern "C" fn typed_value_as_timestamp(typed_value: *mut TypedValue) ->  i64 {
+pub unsafe extern "C" fn typed_value_as_timestamp(typed_value: *mut TypedValue) ->  c_longlong {
     let typed_value = Box::from_raw(typed_value);
-    let val = typed_value.into_timestamp().expect("Typed value cannot be coerced into a Timestamp");
-    val
+    let t = typed_value.value_type();
+    typed_value.into_timestamp().expect(&format!("Typed value of type {:?} cannot be coerced into a Timestamp", t))
 }
 
 //as_string
@@ -386,9 +377,9 @@ pub unsafe extern "C" fn values_iter_next(iter: *mut TypedValueIterator) ->  *co
 
 //as_long
 #[no_mangle]
-pub unsafe extern "C" fn values_iter_next_as_long(iter: *mut TypedValueIterator) ->  *const i64 {
+pub unsafe extern "C" fn values_iter_next_as_long(iter: *mut TypedValueIterator) ->  *const c_longlong {
     let iter = &mut *iter;
-    iter.next().map_or(std::ptr::null_mut(), |v| &v.into_long().expect("Typed value cannot be coerced into a Long") as *const i64)
+    iter.next().map_or(std::ptr::null_mut(), |v| &v.into_long().expect("Typed value cannot be coerced into a Long") as *const c_longlong)
 }
 // as ref
 #[no_mangle]
@@ -447,7 +438,7 @@ pub unsafe extern "C" fn value_at_index(values: *mut Vec<TypedValue>, index: c_i
 
 //as_long
 #[no_mangle]
-pub unsafe extern "C" fn value_at_index_as_long(values: *mut Vec<TypedValue>, index: c_int) ->  i64 {
+pub unsafe extern "C" fn value_at_index_as_long(values: *mut Vec<TypedValue>, index: c_int) ->  c_longlong {
     let result = &*values;
     let value = result.get(index as usize).expect("No value at index");
     value.clone().into_long().expect("Typed value cannot be coerced into a Long")
@@ -486,7 +477,7 @@ pub unsafe extern "C" fn value_at_index_as_double(values: *mut Vec<TypedValue>, 
 
 //as_timestamp
 #[no_mangle]
-pub unsafe extern "C" fn value_at_index_as_timestamp(values: *mut Vec<TypedValue>, index: c_int) ->  i64 {
+pub unsafe extern "C" fn value_at_index_as_timestamp(values: *mut Vec<TypedValue>, index: c_int) ->  c_longlong {
     let result = &*values;
     let value = result.get(index as usize).expect("No value at index");
     value.clone().into_timestamp().expect("Typed value cannot be coerced into a timestamp")
@@ -509,7 +500,7 @@ pub unsafe extern "C" fn value_at_index_as_uuid(values: *mut Vec<TypedValue>, in
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn store_value_for_attribute(store: *mut Store, entid: i64, attribute: *const c_char) ->  *mut ExternResult {
+pub unsafe extern "C" fn store_value_for_attribute(store: *mut Store, entid: c_longlong, attribute: *const c_char) ->  *mut ExternResult {
     let store = &*store;
     let kw = kw_from_string(c_char_to_string(attribute));
     let value = match store.lookup_value_for_attribute(entid, &kw) {
