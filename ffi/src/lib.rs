@@ -42,6 +42,7 @@ pub use mentat::{
     Syncable,
     TypedValue,
     TxObserver,
+    TxReport,
     Uuid,
     ValueType,
     Variable,
@@ -57,21 +58,23 @@ pub use utils::strings::{
     string_to_c_char,
 };
 
+pub use utils::log;
+
 pub type TypedValueIterator = vec::IntoIter<TypedValue>;
 pub type TypedValueListIterator = vec::IntoIter<Vec<TypedValue>>;
 
 #[repr(C)]
 #[derive(Debug, Clone)]
-pub struct ExternTxReport {
+pub struct TransactionChange {
     pub txid: Entid,
-    pub changes: Box<[Entid]>,
     pub changes_len: usize,
+    pub changes: Box<[Entid]>,
 }
 
 #[repr(C)]
 #[derive(Debug)]
-pub struct ExternTxReportList {
-    pub reports: Box<[ExternTxReport]>,
+pub struct TxChangeList {
+    pub reports: Box<[TransactionChange]>,
     pub len: usize,
 }
 
@@ -136,6 +139,42 @@ pub extern "C" fn store_open(uri: *const c_char) -> *mut Store {
 // TODO: begin_read
 
 // TODO: begin_transaction
+
+#[no_mangle]
+pub unsafe extern "C" fn store_transact(store: *mut Store, transaction: *const c_char) -> *mut ExternResult {
+    let store = &mut*store;
+    let transaction = c_char_to_string(transaction);
+    let result = store.begin_transaction().and_then(|mut in_progress| {
+        in_progress.transact(&transaction).and_then(|tx_report| {
+            in_progress.commit()
+                       .map(|_| tx_report)
+        })
+    });
+    Box::into_raw(Box::new(result.into()))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tx_report_get_entid(tx_report: *mut TxReport) -> c_longlong {
+    let tx_report = &*tx_report;
+    tx_report.tx_id as c_longlong
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tx_report_get_tx_instant(tx_report: *mut TxReport) -> c_longlong {
+    let tx_report = &*tx_report;
+    tx_report.tx_instant.timestamp() as c_longlong
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn tx_report_entity_for_temp_id(tx_report: *mut TxReport, tempid: *const c_char) -> *mut c_longlong {
+    let tx_report = &*tx_report;
+    let key = c_char_to_string(tempid);
+    if let Some(entid) = tx_report.tempids.get(&key) {
+        Box::into_raw(Box::new(entid.clone() as c_longlong))
+    } else {
+        std::ptr::null_mut()
+    }
+}
 
 // TODO: cache
 
@@ -469,12 +508,6 @@ pub unsafe extern "C" fn value_at_index_as_uuid(values: *mut Vec<TypedValue>, in
     string_to_c_char(value.clone().into_uuid_string().expect("Typed value cannot be coerced into a Uuid"))
 }
 
-// TODO: q_prepare
-
-// TODO: q_explain
-
-// TODO: lookup_values_for_attribute
-
 #[no_mangle]
 pub unsafe extern "C" fn store_value_for_attribute(store: *mut Store, entid: i64, attribute: *const c_char) ->  *mut ExternResult {
     let store = &*store;
@@ -492,24 +525,24 @@ pub unsafe extern "C" fn store_register_observer(store: *mut Store,
                                                    key: *const c_char,
                                             attributes: *const Entid,
                                         attributes_len: usize,
-                                              callback: extern fn(key: *const c_char, reports: &ExternTxReportList)) {
+                                              callback: extern fn(key: *const c_char, reports: &TxChangeList)) {
     let store = &mut*store;
     let mut attribute_set = BTreeSet::new();
     let slice = slice::from_raw_parts(attributes, attributes_len);
     attribute_set.extend(slice.iter());
     let key = c_char_to_string(key);
     let tx_observer = Arc::new(TxObserver::new(attribute_set, move |obs_key, batch| {
-        let extern_reports: Vec<ExternTxReport> = batch.into_iter().map(|(tx_id, changes)| {
+        let extern_reports: Vec<TransactionChange> = batch.into_iter().map(|(tx_id, changes)| {
             let changes: Vec<Entid> = changes.into_iter().map(|i|*i).collect();
             let len = changes.len();
-            ExternTxReport {
+            TransactionChange {
                 txid: *tx_id,
                 changes: changes.into_boxed_slice(),
                 changes_len: len,
             }
         }).collect();
         let len = extern_reports.len();
-        let reports = ExternTxReportList {
+        let reports = TxChangeList {
             reports: extern_reports.into_boxed_slice(),
             len: len,
         };
@@ -536,7 +569,7 @@ pub unsafe extern "C" fn store_entid_for_attribute(store: *mut Store, attr: *con
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn tx_report_list_entry_at(tx_report_list: *mut ExternTxReportList, index: c_int) -> *const ExternTxReport {
+pub unsafe extern "C" fn tx_change_list_entry_at(tx_report_list: *mut TxChangeList, index: c_int) -> *const TransactionChange {
     let tx_report_list = &*tx_report_list;
     let index = index as usize;
     let report = Box::new(tx_report_list.reports[index].clone());
@@ -544,7 +577,7 @@ pub unsafe extern "C" fn tx_report_list_entry_at(tx_report_list: *mut ExternTxRe
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn changelist_entry_at(tx_report: *mut ExternTxReport, index: c_int) -> Entid {
+pub unsafe extern "C" fn changelist_entry_at(tx_report: *mut TransactionChange, index: c_int) -> Entid {
     let tx_report = &*tx_report;
     let index = index as usize;
     tx_report.changes[index].clone()
@@ -633,8 +666,7 @@ pub unsafe extern "C" fn store_set_uuid_for_attribute_on_entid(store: *mut Store
 #[no_mangle]
 pub unsafe extern "C" fn destroy(obj: *mut c_void) {
     if !obj.is_null() {
-        let obj_to_release = Box::from_raw(obj);
-        println!("object to release {:?}", obj_to_release);
+        let _ = Box::from_raw(obj);
     }
 }
 
@@ -649,6 +681,8 @@ macro_rules! define_destructor (
 define_destructor!(query_builder_destroy, QueryBuilder);
 
 define_destructor!(store_destroy, Store);
+
+define_destructor!(tx_report_destroy, TxReport);
 
 define_destructor!(typed_value_destroy, TypedValue);
 
