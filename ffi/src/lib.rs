@@ -396,9 +396,9 @@ pub unsafe extern "C" fn values_iter(values: *mut Vec<TypedValue>) ->  *mut Type
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn values_iter_next(iter: *mut TypedValueIterator) ->  *const TypedValue {
+pub unsafe extern "C" fn values_iter_next(iter: *mut TypedValueIterator) ->  *mut TypedValue {
     let iter = &mut *iter;
-    iter.next().map_or(std::ptr::null_mut(), |v| &v as *const TypedValue)
+    iter.next().map_or(std::ptr::null_mut(), |v| Box::into_raw(Box::new(v)))
 }
 
 //as_long
