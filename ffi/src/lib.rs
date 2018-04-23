@@ -109,7 +109,7 @@ impl<T, E> From<Result<T, E>> for ExternResult where E: std::error::Error {
             },
             Err(e) => {
                 ExternResult {
-                    err: string_to_c_char(e.description()),
+                    err: string_to_c_char(e.to_string()),
                     ok: std::ptr::null(),
                 }
             }
@@ -506,7 +506,7 @@ pub unsafe extern "C" fn store_value_for_attribute(store: *mut Store, entid: c_l
     let value = match store.lookup_value_for_attribute(entid, &kw) {
         Ok(Some(v)) => ExternResult { ok: Box::into_raw(Box::new(v)) as *const _ as *const c_void, err: std::ptr::null() },
         Ok(None) => ExternResult { ok: std::ptr::null(), err: std::ptr::null() },
-        Err(e) => ExternResult { ok: std::ptr::null(), err: string_to_c_char(e.description()) },
+        Err(e) => ExternResult { ok: std::ptr::null(), err: string_to_c_char(e.to_string()) },
     };
     Box::into_raw(Box::new(value))
 }
