@@ -47,6 +47,13 @@ pub use mentat::{
     Variable,
 };
 
+pub use mentat::entity_builder::{
+    BuildTerms,
+    EntityBuilder,
+    InProgressBuilder,
+    IntoThing,
+};
+
 pub mod android;
 pub mod utils;
 
@@ -253,9 +260,10 @@ pub unsafe extern "C" fn query_builder_bind_string(query_builder: *mut QueryBuil
 
 // uuid
 #[no_mangle]
-pub unsafe extern "C" fn query_builder_bind_uuid(query_builder: *mut QueryBuilder, var: *const c_char, value: *const c_char) {
+pub unsafe extern "C" fn query_builder_bind_uuid(query_builder: *mut QueryBuilder, var: *const c_char, value: *mut [u8; 16]) {
     let var = c_char_to_string(var);
-    let value = Uuid::parse_str(&c_char_to_string(value)).expect("valid uuid");
+    let value = &*value;
+    let value = Uuid::from_bytes(value).expect("valid uuid");
     let query_builder = &mut*query_builder;
     query_builder.bind_value(&var, value);
 }
@@ -340,9 +348,17 @@ pub unsafe extern "C" fn typed_value_as_string(typed_value: *mut TypedValue) -> 
 
 //as_uuid
 #[no_mangle]
-pub unsafe extern "C" fn typed_value_as_uuid(typed_value: *mut TypedValue) ->  *const c_char {
+pub unsafe extern "C" fn typed_value_as_uuid(typed_value: *mut TypedValue) ->  *mut [u8; 16] {
     let typed_value = Box::from_raw(typed_value);
-    string_to_c_char(typed_value.into_uuid_string().expect("Typed value cannot be coerced into a Uuid"))
+    let value = typed_value.into_uuid().expect("Typed value cannot be coerced into a Uuid");
+    Box::into_raw(Box::new(*value.as_bytes()))
+}
+
+//value_type
+#[no_mangle]
+pub unsafe extern "C" fn typed_value_value_type(typed_value: *mut TypedValue) ->  ValueType {
+    let typed_value = &*typed_value;
+    typed_value.value_type()
 }
 
 #[no_mangle]
@@ -493,10 +509,11 @@ pub unsafe extern "C" fn value_at_index_as_string(values: *mut Vec<TypedValue>, 
 
 //as_uuid
 #[no_mangle]
-pub unsafe extern "C" fn value_at_index_as_uuid(values: *mut Vec<TypedValue>, index: c_int) ->  *mut c_char {
+pub unsafe extern "C" fn value_at_index_as_uuid(values: *mut Vec<TypedValue>, index: c_int) ->  *mut [u8; 16] {
     let result = &*values;
     let value = result.get(index as usize).expect("No value at index");
-    string_to_c_char(value.clone().into_uuid_string().expect("Typed value cannot be coerced into a Uuid"))
+    let uuid = value.clone().into_uuid().expect("Typed value cannot be coerced into a Uuid");
+    Box::into_raw(Box::new(*uuid.as_bytes()))
 }
 
 #[no_mangle]
