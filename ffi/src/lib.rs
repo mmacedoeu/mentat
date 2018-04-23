@@ -272,7 +272,12 @@ pub unsafe extern "C" fn query_builder_bind_uuid(query_builder: *mut QueryBuilde
 pub unsafe extern "C" fn query_builder_execute_scalar(query_builder: *mut QueryBuilder) -> *mut ExternResult {
     let query_builder = &mut*query_builder;
     let results = query_builder.execute_scalar();
-    Box::into_raw(Box::new(results.into()))
+    let extern_result = match results {
+        Ok(Some(v)) => ExternResult { err: std::ptr::null(), ok: Box::into_raw(Box::new(v)) as *const _ as *const c_void, },
+        Ok(None) => ExternResult { err: std::ptr::null(), ok: std::ptr::null(), },
+        Err(e) => ExternResult { err: string_to_c_char(e.to_string()), ok: std::ptr::null(), }
+    };
+    Box::into_raw(Box::new(extern_result))
 }
 
 #[no_mangle]
@@ -286,7 +291,12 @@ pub unsafe extern "C" fn query_builder_execute_coll(query_builder: *mut QueryBui
 pub unsafe extern "C" fn query_builder_execute_tuple(query_builder: *mut QueryBuilder) -> *mut ExternResult {
     let query_builder = &mut*query_builder;
     let results = query_builder.execute_tuple();
-    Box::into_raw(Box::new(results.into()))
+    let extern_result = match results {
+        Ok(Some(v)) => ExternResult { err: std::ptr::null(), ok: Box::into_raw(Box::new(v)) as *const _ as *const c_void, },
+        Ok(None) => ExternResult { err: std::ptr::null(), ok: std::ptr::null(), },
+        Err(e) => ExternResult { err: string_to_c_char(e.to_string()), ok: std::ptr::null(), }
+    };
+    Box::into_raw(Box::new(extern_result))
 }
 
 #[no_mangle]
