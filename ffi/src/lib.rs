@@ -329,9 +329,9 @@ pub unsafe extern "C" fn typed_value_as_kw(typed_value: *mut TypedValue) ->  *co
 
 //as_boolean
 #[no_mangle]
-pub unsafe extern "C" fn typed_value_as_boolean(typed_value: *mut TypedValue) ->  bool {
+pub unsafe extern "C" fn typed_value_as_boolean(typed_value: *mut TypedValue) -> i32 {
     let typed_value = Box::from_raw(typed_value);
-    typed_value.into_boolean().expect("Typed value cannot be coerced into a Boolean")
+    if typed_value.into_boolean().expect("Typed value cannot be coerced into a Boolean") { 1 } else { 0 }
 }
 
 //as_double
@@ -423,9 +423,9 @@ pub unsafe extern "C" fn values_iter_next_as_kw(iter: *mut TypedValueIterator) -
 
 //as_boolean
 #[no_mangle]
-pub unsafe extern "C" fn values_iter_next_as_boolean(iter: *mut TypedValueIterator) ->  *const bool {
+pub unsafe extern "C" fn values_iter_next_as_boolean(iter: *mut TypedValueIterator) ->  *const i32 {
     let iter = &mut *iter;
-    iter.next().map_or(std::ptr::null_mut(), |v| &v.into_boolean().expect("Typed value cannot be coerced into a Boolean") as *const bool)
+    iter.next().map_or(std::ptr::null_mut(), |v| if v.into_boolean().expect("Typed value cannot be coerced into a Boolean") { 1 } else { 0 } as *const i32)
 }
 
 //as_double
@@ -487,10 +487,10 @@ pub unsafe extern "C" fn value_at_index_as_kw(values: *mut Vec<TypedValue>, inde
 
 //as_boolean
 #[no_mangle]
-pub unsafe extern "C" fn value_at_index_as_boolean(values: *mut Vec<TypedValue>, index: c_int) ->  bool {
+pub unsafe extern "C" fn value_at_index_as_boolean(values: *mut Vec<TypedValue>, index: c_int) ->  i32 {
     let result = &*values;
     let value = result.get(index as usize).expect("No value at index");
-    value.clone().into_boolean().expect("Typed value cannot be coerced into a Boolean")
+    if value.clone().into_boolean().expect("Typed value cannot be coerced into a Boolean") { 1 } else { 0 }
 }
 
 //as_double
